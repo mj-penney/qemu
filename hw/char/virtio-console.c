@@ -159,10 +159,7 @@ static void chr_event(void *opaque, QEMUChrEvent event)
         virtio_serial_open(port);
         break;
     case CHR_EVENT_CLOSED:
-        if (vcon->watch) {
-            g_source_remove(vcon->watch);
-            vcon->watch = 0;
-        }
+        g_clear_handle_id(&vcon->watch, g_source_remove);
         virtio_serial_close(port);
         break;
     case CHR_EVENT_BREAK:
@@ -188,7 +185,7 @@ static int chr_be_change(void *opaque)
     }
 
     if (vcon->watch) {
-        g_source_remove(vcon->watch);
+        g_clear_handle_id(&vcon->watch, g_source_remove);
         vcon->watch = qemu_chr_fe_add_watch(&vcon->chr,
                                             G_IO_OUT | G_IO_HUP,
                                             chr_write_unblocked, vcon);
@@ -256,9 +253,7 @@ static void virtconsole_unrealize(DeviceState *dev)
 {
     VirtConsole *vcon = VIRTIO_CONSOLE(dev);
 
-    if (vcon->watch) {
-        g_clear_handle_id(&vcon->watch, g_source_remove);
-    }
+    g_clear_handle_id(&vcon->watch, g_source_remove);
 }
 
 static void virtconsole_class_init(ObjectClass *klass, const void *data)

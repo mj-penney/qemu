@@ -857,10 +857,7 @@ static void serial_reset(void *opaque)
 {
     SerialState *s = opaque;
 
-    if (s->watch_tag > 0) {
-        g_source_remove(s->watch_tag);
-        s->watch_tag = 0;
-    }
+    g_clear_handle_id(&s->watch_tag, g_source_remove);
 
     s->rbr = 0;
     s->ier = 0;
@@ -913,7 +910,7 @@ static int serial_be_change(void *opaque)
     }
 
     if (s->watch_tag > 0) {
-        g_source_remove(s->watch_tag);
+        g_clear_handle_id(&s->watch_tag, g_source_remove);
         s->watch_tag = qemu_chr_fe_add_watch(&s->chr, G_IO_OUT | G_IO_HUP,
                                              serial_watch_cb, s);
     }
