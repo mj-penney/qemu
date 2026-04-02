@@ -37,9 +37,7 @@ static void vncws_tls_handshake_done(QIOTask *task,
         error_free(err);
     } else {
         VNC_DEBUG("TLS handshake complete, starting websocket handshake\n");
-        if (vs->ioc_tag) {
-            g_source_remove(vs->ioc_tag);
-        }
+        g_clear_handle_id(&vs->ioc_tag, g_source_remove);
         vs->ioc_tag = qio_channel_add_watch(vs->ioc,
                                             G_IO_IN | G_IO_HUP | G_IO_ERR,
                                             vncws_handshake_io, vs, NULL);
@@ -55,10 +53,7 @@ gboolean vncws_tls_handshake_io(QIOChannel *ioc G_GNUC_UNUSED,
     QIOChannelTLS *tls;
     Error *err = NULL;
 
-    if (vs->ioc_tag) {
-        g_source_remove(vs->ioc_tag);
-        vs->ioc_tag = 0;
-    }
+    g_clear_handle_id(&vs->ioc_tag, g_source_remove);
 
     if (condition & (G_IO_HUP | G_IO_ERR)) {
         vnc_client_error(vs);
@@ -107,9 +102,7 @@ static void vncws_handshake_done(QIOTask *task,
     } else {
         VNC_DEBUG("Websock handshake complete, starting VNC protocol\n");
         vnc_start_protocol(vs);
-        if (vs->ioc_tag) {
-            g_source_remove(vs->ioc_tag);
-        }
+        g_clear_handle_id(&vs->ioc_tag, g_source_remove);
         vs->ioc_tag = qio_channel_add_watch(
             vs->ioc, G_IO_IN | G_IO_HUP | G_IO_ERR,
             vnc_client_io, vs, NULL);
@@ -124,10 +117,7 @@ gboolean vncws_handshake_io(QIOChannel *ioc G_GNUC_UNUSED,
     VncState *vs = opaque;
     QIOChannelWebsock *wioc;
 
-    if (vs->ioc_tag) {
-        g_source_remove(vs->ioc_tag);
-        vs->ioc_tag = 0;
-    }
+    g_clear_handle_id(&vs->ioc_tag, g_source_remove);
 
     if (condition & (G_IO_HUP | G_IO_ERR)) {
         vnc_client_error(vs);

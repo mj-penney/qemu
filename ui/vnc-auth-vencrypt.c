@@ -75,9 +75,7 @@ static void vnc_tls_handshake_done(QIOTask *task,
         vnc_client_error(vs);
         error_free(err);
     } else {
-        if (vs->ioc_tag) {
-            g_source_remove(vs->ioc_tag);
-        }
+        g_clear_handle_id(&vs->ioc_tag, g_source_remove);
         vs->ioc_tag = qio_channel_add_watch(
             vs->ioc, G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_OUT,
             vnc_client_io, vs, NULL);
@@ -102,10 +100,7 @@ static int protocol_client_vencrypt_auth(VncState *vs, uint8_t *data, size_t len
         vnc_write_u8(vs, 1); /* Accept auth */
         vnc_flush(vs);
 
-        if (vs->ioc_tag) {
-            g_source_remove(vs->ioc_tag);
-            vs->ioc_tag = 0;
-        }
+        g_clear_handle_id(&vs->ioc_tag, g_source_remove);
 
         tls = qio_channel_tls_new_server(
             vs->ioc,
