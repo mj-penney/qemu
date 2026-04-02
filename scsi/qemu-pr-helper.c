@@ -831,7 +831,7 @@ static void close_server_socket(void)
 {
     assert(server_ioc);
 
-    g_source_remove(server_watch);
+    g_clear_handle_id(&server_watch, g_source_remove);
     server_watch = -1;
     object_unref(OBJECT(server_ioc));
     num_active_sockets--;
