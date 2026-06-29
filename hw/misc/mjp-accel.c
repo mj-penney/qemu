@@ -14,21 +14,47 @@ typedef struct MjpAccel MjpAccel;
 DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
                          TYPE_MJP_ACCEL)
 
-#define FACT_IRQ        0x00000001
-#define DMA_IRQ         0x00000100
-
-#define DMA_START       0x40000
-#define DMA_SIZE        4096
-
 struct MjpAccel {
     PCIDevice pdev;
+    MemoryRegion mmio;
+
+    /* device registers */
+    uint32_t reg0;
+    uint32_t reg1;
+};
+
+static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
+{
+    (void)opaque;
+    (void)addr;
+    (void)size;
+
+    return 0;
+}
+
+static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+                                                                unsigned size)
+{
+    (void)opaque;
+    (void)addr;
+    (void)val;
+    (void)size;
+}
+
+static const MemoryRegionOps mjp_mmio_ops = {
+    .read = mjp_mmio_read,
+    .write = mjp_mmio_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void mjp_accel_realize(PCIDevice *pdev, Error **errp)
 {
-    //MjpAccel *mjp = MJP_ACCEL(pdev);
-    (void)pdev;
+    MjpAccel *mjp = MJP_ACCEL(pdev);
     (void)errp;
+
+    memory_region_init_io(&mjp->mmio, OBJECT(mjp), &mjp_mmio_ops, mjp,
+            "mjp-accel-mmio", 0x1000);
+    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &mjp->mmio);
 }
 
 static void mjp_accel_uninit(PCIDevice *pdev)
