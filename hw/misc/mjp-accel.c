@@ -3,6 +3,7 @@
 #include "qemu/units.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/msi.h"
+#include "hw/pci/msix.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
 #include "qemu/main-loop.h" /* iothread mutex */
@@ -13,6 +14,23 @@
 typedef struct MjpAccel MjpAccel;
 DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
                          TYPE_MJP_ACCEL)
+
+#define MJP_ACCEL_BAR0_SIZE    0x10000
+
+#define MJP_REGS_BAR_IDX       0
+#define MJP_REGS_OFFSET        0x00000
+#define MJP_REGS_SIZE          0x01000
+
+#define MJP_MSIX_TABLE_BAR_IDX 0
+#define MJP_MSIX_TABLE_OFFSET  0x01000
+#define MJP_MSIX_TABLE_SIZE    0x01000
+
+#define MJP_MSIX_PBA_BAR_IDX   0
+#define MJP_MSIX_PBA_OFFSET    0x02000
+#define MJP_MSIX_PBA_SIZE      0x01000
+
+#define MJP_MSIX_VEC_NUM 1
+#define MJP_MSIX_CAP_POS 0 /* don't manually set msix cap_pos */
 
 struct MjpAccel {
     PCIDevice pdev;
@@ -50,17 +68,42 @@ static const MemoryRegionOps mjp_mmio_ops = {
 static void mjp_accel_realize(PCIDevice *pdev, Error **errp)
 {
     MjpAccel *mjp = MJP_ACCEL(pdev);
-    (void)errp;
 
-    memory_region_init_io(&mjp->mmio, OBJECT(mjp), &mjp_mmio_ops, mjp,
-            "mjp-accel-mmio", 0x1000);
-    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &mjp->mmio);
+    memory_region_init_io(&mjp->mmio,
+                          OBJECT(mjp),
+                          &mjp_mmio_ops,
+                          mjp,
+                          "mjp-accel-mmio",
+                          MJP_ACCEL_BAR0_SIZE);
+
+    pci_register_bar(pdev,
+                     MJP_REGS_BAR_IDX,
+                     PCI_BASE_ADDRESS_SPACE_MEMORY,
+                     &mjp->mmio);
+
+    int res = msix_init(pdev, MJP_MSIX_VEC_NUM,
+                        &mjp->mmio,
+                        MJP_MSIX_TABLE_BAR_IDX, MJP_MSIX_TABLE_OFFSET,
+                        &mjp->mmio,
+                        MJP_MSIX_PBA_BAR_IDX, MJP_MSIX_PBA_OFFSET,
+                        MJP_MSIX_CAP_POS,
+                        errp);
+
+    if (res < 0) {
+        /* handle error */
+    } else {
+        /* only one vector for now */
+        msix_vector_use(pdev, 0);
+    }
 }
 
 static void mjp_accel_uninit(PCIDevice *pdev)
 {
-    //MjpAccel *mjp = MJP_ACCEL(pdev);
-    (void)pdev;
+    MjpAccel *mjp = MJP_ACCEL(pdev);
+
+    /* only one vector to clean up */
+    msix_vector_unuse(pdev, 0);
+    msix_uninit(pdev, &mjp->mmio, &mjp->mmio);
 }
 
 static void mjp_accel_instance_init(Object *obj)
