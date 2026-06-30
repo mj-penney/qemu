@@ -15,6 +15,13 @@ typedef struct MjpAccel MjpAccel;
 DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
                          TYPE_MJP_ACCEL)
 
+/* vendor & device ids */
+
+#define MJP_ACCEL_VENDOR_ID 0x1234
+#define MJP_ACCEL_DEVICE_ID 0x11e8
+
+/* memory region offsets */
+
 #define MJP_ACCEL_BAR0_SIZE    0x10000
 
 #define MJP_REGS_BAR_IDX       0
@@ -32,31 +39,63 @@ DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
 #define MJP_MSIX_VEC_NUM 1
 #define MJP_MSIX_CAP_POS 0 /* don't manually set msix cap_pos */
 
+/* individual register offsets */
+
+#define MJP_R0_OFFSET 0x00
+#define MJP_R1_OFFSET 0x04
+
 struct MjpAccel {
     PCIDevice pdev;
     MemoryRegion mmio;
 
     /* device registers */
-    uint32_t reg0;
-    uint32_t reg1;
+    uint32_t r0;
+    uint32_t r1;
 };
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    (void)opaque;
-    (void)addr;
-    (void)size;
+    MjpAccel *mjp = opaque;
+    uint64_t val = 0ULL;
 
-    return 0;
+    if (size != 4) {
+        /* only support size 4 for now, error */
+    }
+
+    switch (addr) {
+        case MJP_R0_OFFSET:
+            val = mjp->r0;
+            break;
+        case MJP_R1_OFFSET:
+            val = mjp->r1;
+            break;
+        default:
+            val = 0;
+            break;
+    }
+
+    return val;
 }
 
 static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                                                                 unsigned size)
 {
-    (void)opaque;
-    (void)addr;
-    (void)val;
-    (void)size;
+    MjpAccel *mjp = opaque;
+
+    if (size != 4) {
+        /* only support size 4 for now, error */
+    }
+
+    switch (addr) {
+        case MJP_R0_OFFSET:
+            mjp->r0 = val;
+            break;
+        case MJP_R1_OFFSET:
+            mjp->r1 = val;
+            break;
+        default:
+            break;
+    }
 }
 
 static const MemoryRegionOps mjp_mmio_ops = {
@@ -119,8 +158,8 @@ static void mjp_accel_class_init(ObjectClass *class, const void *data)
 
     k->realize = mjp_accel_realize;
     k->exit = mjp_accel_uninit;
-    k->vendor_id = PCI_VENDOR_ID_QEMU;
-    k->device_id = 0x11e8;
+    k->vendor_id = MJP_ACCEL_VENDOR_ID;
+    k->device_id = MJP_ACCEL_DEVICE_ID;
     k->revision = 0x10;
     k->class_id = PCI_CLASS_OTHERS;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
