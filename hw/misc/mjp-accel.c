@@ -41,16 +41,18 @@ DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
 
 /* individual register offsets */
 
-#define MJP_R0_OFFSET 0x00
-#define MJP_R1_OFFSET 0x04
+#define MJP_DMA_ADDR_LO_OFFSET 0x00
+#define MJP_DMA_ADDR_HI_OFFSET 0x04
+#define MJP_DMA_LEN_OFFSET 0x08
 
 struct MjpAccel {
     PCIDevice pdev;
     MemoryRegion mmio;
 
     /* device registers */
-    uint32_t r0;
-    uint32_t r1;
+    uint32_t dma_addr_lo;
+    uint32_t dma_addr_hi;
+    uint32_t dma_len;
 };
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
@@ -63,11 +65,14 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     switch (addr) {
-        case MJP_R0_OFFSET:
-            val = mjp->r0;
+        case MJP_DMA_ADDR_LO_OFFSET:
+            val = mjp->dma_addr_lo;
             break;
-        case MJP_R1_OFFSET:
-            val = mjp->r1;
+        case MJP_DMA_ADDR_HI_OFFSET:
+            val = mjp->dma_addr_hi;
+            break;
+        case MJP_DMA_LEN_OFFSET:
+            val = mjp->dma_len;
             break;
         default:
             val = 0;
@@ -87,11 +92,14 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     }
 
     switch (addr) {
-        case MJP_R0_OFFSET:
-            mjp->r0 = val;
+        case MJP_DMA_ADDR_LO_OFFSET:
+            mjp->dma_addr_lo = val;
             break;
-        case MJP_R1_OFFSET:
-            mjp->r1 = val;
+        case MJP_DMA_ADDR_HI_OFFSET:
+            mjp->dma_addr_hi = val;
+            break;
+        case MJP_DMA_LEN_OFFSET:
+            mjp->dma_len = val;
             break;
         default:
             break;
