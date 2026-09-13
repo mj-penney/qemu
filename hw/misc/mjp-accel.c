@@ -10,19 +10,19 @@
 #include "qemu/module.h"
 #include "qapi/visitor.h"
 
-#define TYPE_MJP_ACCEL "mjp-accel"
-typedef struct MjpAccel MjpAccel;
-DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
-                         TYPE_MJP_ACCEL)
+#define TYPE_MJP "mjp-accel"
+typedef struct Mjp Mjp;
+DECLARE_INSTANCE_CHECKER(Mjp, MJP,
+                         TYPE_MJP)
 
 /* vendor & device ids */
 
-#define MJP_ACCEL_VENDOR_ID 0x1234
-#define MJP_ACCEL_DEVICE_ID 0x11e8
+#define MJP_VENDOR_ID 0x1234
+#define MJP_DEVICE_ID 0x11e8
 
 /* memory region offsets */
 
-#define MJP_ACCEL_BAR0_SIZE    0x10000
+#define MJP_BAR0_SIZE    0x10000
 
 #define MJP_REGS_BAR_IDX       0
 #define MJP_REGS_OFFSET        0x00000
@@ -45,7 +45,7 @@ DECLARE_INSTANCE_CHECKER(MjpAccel, MJP_ACCEL,
 #define MJP_DMA_ADDR_HI 0x04
 #define MJP_DMA_SIZE 0x08
 
-struct MjpAccel {
+struct Mjp {
     PCIDevice pdev;
     MemoryRegion mmio;
 
@@ -57,7 +57,7 @@ struct MjpAccel {
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    MjpAccel *mjp = opaque;
+    Mjp *mjp = opaque;
     uint64_t val = 0ULL;
 
     if (size != 4) {
@@ -85,7 +85,7 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
 static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                                                                 unsigned size)
 {
-    MjpAccel *mjp = opaque;
+    Mjp *mjp = opaque;
 
     if (size != 4) {
         /* only support size 4 for now, error */
@@ -112,16 +112,16 @@ static const MemoryRegionOps mjp_mmio_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static void mjp_accel_realize(PCIDevice *pdev, Error **errp)
+static void mjp_realize(PCIDevice *pdev, Error **errp)
 {
-    MjpAccel *mjp = MJP_ACCEL(pdev);
+    Mjp *mjp = MJP(pdev);
 
     memory_region_init_io(&mjp->mmio,
                           OBJECT(mjp),
                           &mjp_mmio_ops,
                           mjp,
-                          "mjp-accel-mmio",
-                          MJP_ACCEL_BAR0_SIZE);
+                          "mjp-mmio",
+                          MJP_BAR0_SIZE);
 
     pci_register_bar(pdev,
                      MJP_REGS_BAR_IDX,
@@ -144,42 +144,42 @@ static void mjp_accel_realize(PCIDevice *pdev, Error **errp)
     }
 }
 
-static void mjp_accel_uninit(PCIDevice *pdev)
+static void mjp_uninit(PCIDevice *pdev)
 {
-    MjpAccel *mjp = MJP_ACCEL(pdev);
+    Mjp *mjp = MJP(pdev);
 
     /* only one vector to clean up */
     msix_vector_unuse(pdev, 0);
     msix_uninit(pdev, &mjp->mmio, &mjp->mmio);
 }
 
-static void mjp_accel_instance_init(Object *obj)
+static void mjp_instance_init(Object *obj)
 {
-    //MjpAccel *mjp = MJP_ACCEL(obj);
+    //Mjp *mjp = MJP(obj);
     (void)obj;
 }
 
-static void mjp_accel_class_init(ObjectClass *class, const void *data)
+static void mjp_class_init(ObjectClass *class, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(class);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(class);
 
-    k->realize = mjp_accel_realize;
-    k->exit = mjp_accel_uninit;
-    k->vendor_id = MJP_ACCEL_VENDOR_ID;
-    k->device_id = MJP_ACCEL_DEVICE_ID;
+    k->realize = mjp_realize;
+    k->exit = mjp_uninit;
+    k->vendor_id = MJP_VENDOR_ID;
+    k->device_id = MJP_DEVICE_ID;
     k->revision = 0x10;
     k->class_id = PCI_CLASS_OTHERS;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
-static const TypeInfo mjp_accel_types[] = {
+static const TypeInfo mjp_types[] = {
     {
-        .name          = TYPE_MJP_ACCEL,
+        .name          = TYPE_MJP,
         .parent        = TYPE_PCI_DEVICE,
-        .instance_size = sizeof(MjpAccel),
-        .instance_init = mjp_accel_instance_init,
-        .class_init    = mjp_accel_class_init,
+        .instance_size = sizeof(Mjp),
+        .instance_init = mjp_instance_init,
+        .class_init    = mjp_class_init,
         .interfaces    = (const InterfaceInfo[]) {
             { INTERFACE_CONVENTIONAL_PCI_DEVICE },
             { },
@@ -187,4 +187,4 @@ static const TypeInfo mjp_accel_types[] = {
     }
 };
 
-DEFINE_TYPES(mjp_accel_types)
+DEFINE_TYPES(mjp_types)
