@@ -24,7 +24,6 @@ struct Mjp {
     /* device registers */
     uint32_t dma_addr_lo;
     uint32_t dma_addr_hi;
-    uint32_t dma_len;
 };
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
@@ -42,9 +41,6 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
             break;
         case MJP_DMA_ADDR_HI:
             val = mjp->dma_addr_hi;
-            break;
-        case MJP_DMA_SIZE:
-            val = mjp->dma_len;
             break;
         default:
             val = 0;
@@ -69,9 +65,6 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         case MJP_DMA_ADDR_HI:
             mjp->dma_addr_hi = val;
-            break;
-        case MJP_DMA_SIZE:
-            mjp->dma_len = val;
             break;
         default:
             break;
