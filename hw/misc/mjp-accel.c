@@ -86,7 +86,7 @@ static void mjp_realize(PCIDevice *pdev, Error **errp)
                           &mjp_mmio_ops,
                           mjp,
                           "mjp-mmio",
-                          MJP_BAR0_SIZE);
+                          MJP_ACCEL_BAR0_SIZE);
 
     pci_register_bar(pdev,
                      MJP_REGS_BAR_IDX,
