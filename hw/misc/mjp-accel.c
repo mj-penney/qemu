@@ -34,7 +34,6 @@ struct Mjp {
 
     /* device registers */
 
-    uint32_t control;
     uint32_t status;
 
     /* Temporary debug buffer.
@@ -44,6 +43,25 @@ struct Mjp {
     uint32_t dma_addr_lo;
     uint32_t dma_addr_hi;
 };
+
+static void mjp_ring_reset(MjpRing *ring)
+{
+    memset(ring, 0, sizeof(MjpRing));
+}
+
+static void mjp_device_reset(Mjp *mjp)
+{
+    MjpRing *sub_ring = &mjp->sub_ring;
+    MjpRing *cpl_ring = &mjp->cpl_ring;
+
+    mjp_ring_reset(sub_ring);
+    mjp_ring_reset(cpl_ring);
+
+    mjp->dma_addr_lo = 0x0;
+    mjp->dma_addr_hi = 0x0;
+
+    mjp->status = MJP_DEV_STATUS_RESET;
+}
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -119,6 +137,10 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         case MJP_DMA_ADDR_HI:
             mjp->dma_addr_hi = val;
+            break;
+
+        case MJP_REG_RESET:
+            mjp_device_reset(mjp);
             break;
 
         /* submission ring */
