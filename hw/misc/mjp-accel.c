@@ -17,11 +17,30 @@ typedef struct Mjp Mjp;
 DECLARE_INSTANCE_CHECKER(Mjp, MJP,
                          TYPE_MJP)
 
+typedef struct MjpRing {
+    uint32_t dma_addr_lo;
+    uint32_t dma_addr_hi;
+    uint32_t size; // bookkepping: number of descriptors in the ring
+    uint32_t prod; // bookkepping: producer index
+    uint32_t cons; // bookkepping: consumer index
+} MjpRing;
+
 struct Mjp {
     PCIDevice pdev;
     MemoryRegion mmio;
 
+    MjpRing sub_ring;
+    MjpRing cpl_ring;
+
     /* device registers */
+
+    uint32_t control;
+    uint32_t status;
+
+    /* Temporary debug buffer.
+     * Remove it once the basic ring loopback/debug path (plan stage 3.1) is
+     * established.
+     */
     uint32_t dma_addr_lo;
     uint32_t dma_addr_hi;
 };
@@ -42,6 +61,41 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
         case MJP_DMA_ADDR_HI:
             val = mjp->dma_addr_hi;
             break;
+
+        /* submission ring */
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_LO):
+            val = mjp->sub_ring.dma_addr_lo;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
+            val = mjp->sub_ring.dma_addr_hi;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
+            val = mjp->sub_ring.size;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_PROD):
+            val = mjp->sub_ring.prod;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_CONS):
+            val = mjp->sub_ring.cons;
+            break;
+
+        /* completion ring */
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_LO):
+            val = mjp->cpl_ring.dma_addr_lo;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
+            val = mjp->cpl_ring.dma_addr_hi;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
+            val = mjp->cpl_ring.size;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_PROD):
+            val = mjp->cpl_ring.prod;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_CONS):
+            val = mjp->cpl_ring.cons;
+            break;
+
         default:
             val = 0;
             break;
@@ -66,6 +120,41 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         case MJP_DMA_ADDR_HI:
             mjp->dma_addr_hi = val;
             break;
+
+        /* submission ring */
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_LO):
+            mjp->sub_ring.dma_addr_lo = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
+            mjp->sub_ring.dma_addr_hi = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
+            mjp->sub_ring.size = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_PROD):
+            mjp->sub_ring.prod = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_CONS):
+            mjp->sub_ring.cons = val;
+            break;
+
+        /* completion ring */
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_LO):
+            mjp->cpl_ring.dma_addr_lo = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
+            mjp->cpl_ring.dma_addr_hi = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
+            mjp->cpl_ring.size = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_PROD):
+            mjp->cpl_ring.prod = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_CONS):
+            mjp->cpl_ring.cons = val;
+            break;
+
         default:
             break;
     }
