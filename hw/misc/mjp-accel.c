@@ -14,8 +14,7 @@
 
 #define TYPE_MJP "mjp-accel"
 typedef struct Mjp Mjp;
-DECLARE_INSTANCE_CHECKER(Mjp, MJP,
-                         TYPE_MJP)
+DECLARE_INSTANCE_CHECKER(Mjp, MJP, TYPE_MJP)
 
 typedef struct MjpRing {
     uint32_t dma_addr_lo;
@@ -44,6 +43,11 @@ struct Mjp {
     uint32_t dma_addr_hi;
 };
 
+static uint64_t mjp_build_dma_addr(uint32_t lo, uint32_t hi)
+{
+    return ((uint64_t)hi << 32) | lo;
+}
+
 static void mjp_ring_reset(MjpRing *ring)
 {
     memset(ring, 0, sizeof(MjpRing));
@@ -61,6 +65,36 @@ static void mjp_device_reset(Mjp *mjp)
     mjp->dma_addr_hi = 0x0;
 
     mjp->status = MJP_DEV_STATUS_RESET;
+}
+
+static void mjp_queue_test(Mjp *mjp)
+{
+    MjpRing *sub_ring = &mjp->sub_ring;
+    struct mjp_sub_desc desc;
+    uint32_t desc_idx = sub_ring->cons % MJP_SUB_RING_SIZE;
+
+    uint64_t addr = mjp_build_dma_addr(sub_ring->dma_addr_lo,
+                                       sub_ring->dma_addr_hi);
+    printf("Sub ring DMA base addr: 0x%" PRIx64 "\n", addr);
+    addr = addr + (desc_idx * sizeof(struct mjp_sub_desc));
+    printf("Descriptor DMA addr: 0x%" PRIx64 "\n", addr);
+
+    MemTxResult res = dma_memory_read(
+        pci_get_address_space(&mjp->pdev),
+        //&address_space_memory,
+        addr,
+        &desc,
+        sizeof(desc),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        /* Handle DMA failure */
+        printf("Error in dma_memory_read(): %d\n", res);
+        return;
+    }
+
+    printf("Job id: %lu\n", desc.job_id);
 }
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
@@ -89,9 +123,6 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
             break;
         case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
             val = mjp->sub_ring.size;
-            break;
-        case MJP_Q_REG(0, MJP_REG_SUB_PROD):
-            val = mjp->sub_ring.prod;
             break;
         case MJP_Q_REG(0, MJP_REG_SUB_CONS):
             val = mjp->sub_ring.cons;
@@ -156,8 +187,8 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         case MJP_Q_REG(0, MJP_REG_SUB_PROD):
             mjp->sub_ring.prod = val;
             break;
-        case MJP_Q_REG(0, MJP_REG_SUB_CONS):
-            mjp->sub_ring.cons = val;
+        case MJP_Q_REG(0, MJP_REG_SUB_DOORBELL):
+            mjp_queue_test(mjp);
             break;
 
         /* completion ring */
