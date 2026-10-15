@@ -67,34 +67,84 @@ static void mjp_device_reset(Mjp *mjp)
     mjp->status = MJP_DEV_STATUS_RESET;
 }
 
-static void mjp_queue_test(Mjp *mjp)
+static int mjp_queue_push(Mjp *mjp, struct mjp_cpl_desc *desc)
 {
-    MjpRing *sub_ring = &mjp->sub_ring;
-    struct mjp_sub_desc desc;
-    uint32_t desc_idx = sub_ring->cons % MJP_SUB_RING_SIZE;
+    MjpRing *ring = &mjp->cpl_ring;
 
-    uint64_t addr = mjp_build_dma_addr(sub_ring->dma_addr_lo,
-                                       sub_ring->dma_addr_hi);
-    printf("Sub ring DMA base addr: 0x%" PRIx64 "\n", addr);
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+
+    uint32_t desc_idx = ring->prod % MJP_CPL_RING_SIZE;
+    addr = addr + (desc_idx * sizeof(struct mjp_cpl_desc));
+
+    MemTxResult res = dma_memory_write(
+        pci_get_address_space(&mjp->pdev),
+        addr,
+        desc,
+        sizeof(struct mjp_cpl_desc),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        /* Handle DMA failure */
+        printf("Error in dma_memory_write(): %d\n", res);
+        return res;
+    }
+
+    printf("Completed job: job_id: %lu\n", desc->job_id);
+
+    // device's job to update producer index on the completion ring
+    ring->prod++;
+
+    return 0;
+}
+
+static int mjp_queue_pop(Mjp *mjp, struct mjp_sub_desc *desc)
+{
+    MjpRing *ring = &mjp->sub_ring;
+
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+
+    uint32_t desc_idx = ring->cons % MJP_SUB_RING_SIZE;
     addr = addr + (desc_idx * sizeof(struct mjp_sub_desc));
-    printf("Descriptor DMA addr: 0x%" PRIx64 "\n", addr);
 
     MemTxResult res = dma_memory_read(
         pci_get_address_space(&mjp->pdev),
-        //&address_space_memory,
         addr,
-        &desc,
-        sizeof(desc),
+        desc,
+        sizeof(struct mjp_sub_desc),
         MEMTXATTRS_UNSPECIFIED
     );
 
     if (res != MEMTX_OK) {
         /* Handle DMA failure */
         printf("Error in dma_memory_read(): %d\n", res);
-        return;
+        return res;
     }
 
-    printf("Job id: %lu\n", desc.job_id);
+    printf("Received job: job_id: %lu\n", desc->job_id);
+    
+    // device's job to update consumer index on the submission ring
+    ring->cons++;
+
+    return 0;
+}
+
+static void mjp_queue_test(Mjp *mjp)
+{
+    struct mjp_sub_desc sub_desc;
+    struct mjp_cpl_desc cpl_desc;
+
+    if (mjp_queue_pop(mjp, &sub_desc)) {
+        return; // error
+    }
+
+    cpl_desc.job_id = sub_desc.job_id;
+
+    if (mjp_queue_push(mjp, &cpl_desc)) {
+        return; // error
+    }
 }
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
