@@ -33,14 +33,7 @@ struct Mjp {
 
     /* device registers */
 
-    uint32_t status;
-
-    /* Temporary debug buffer.
-     * Remove it once the basic ring loopback/debug path (plan stage 3.1) is
-     * established.
-     */
-    uint32_t dma_addr_lo;
-    uint32_t dma_addr_hi;
+    mjp_device_status device_status;
 };
 
 static uint64_t mjp_build_dma_addr(uint32_t lo, uint32_t hi)
@@ -58,13 +51,46 @@ static void mjp_device_reset(Mjp *mjp)
     MjpRing *sub_ring = &mjp->sub_ring;
     MjpRing *cpl_ring = &mjp->cpl_ring;
 
+    mjp->device_status = 0;
+
     mjp_ring_reset(sub_ring);
     mjp_ring_reset(cpl_ring);
 
-    mjp->dma_addr_lo = 0x0;
-    mjp->dma_addr_hi = 0x0;
+    mjp->device_status = MJP_DEVICE_STATUS_RESET;
+}
 
-    mjp->status = MJP_DEV_STATUS_RESET;
+static void mjp_device_enable(Mjp *mjp)
+{
+    MjpRing *ring = &mjp->sub_ring;
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+    if (!addr) {
+        mjp->device_status = MJP_DEVICE_STATUS_ERROR;
+        return;
+    }
+
+    ring = &mjp->cpl_ring;
+    addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                              ring->dma_addr_hi);
+    if (!addr) {
+        mjp->device_status = MJP_DEVICE_STATUS_ERROR;
+        return;
+    }
+
+    mjp->device_status = MJP_DEVICE_STATUS_ENABLED;
+}
+
+static void mjp_control_handle(Mjp *mjp, uint64_t command)
+{
+    switch (command) {
+        case MJP_CONTROL_DEVICE_RESET:
+            mjp_device_reset(mjp);
+            break;
+        case MJP_CONTROL_DEVICE_ENABLE:
+            mjp_device_enable(mjp);
+        default:
+            break;
+    }
 }
 
 static int mjp_queue_push(Mjp *mjp, struct mjp_cpl_desc *desc)
@@ -157,11 +183,8 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     switch (addr) {
-        case MJP_DMA_ADDR_LO:
-            val = mjp->dma_addr_lo;
-            break;
-        case MJP_DMA_ADDR_HI:
-            val = mjp->dma_addr_hi;
+        case MJP_REG_DEVICE_STATUS:
+            val = mjp->device_status;
             break;
 
         /* submission ring */
@@ -213,15 +236,8 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     }
 
     switch (addr) {
-        case MJP_DMA_ADDR_LO:
-            mjp->dma_addr_lo = val;
-            break;
-        case MJP_DMA_ADDR_HI:
-            mjp->dma_addr_hi = val;
-            break;
-
-        case MJP_REG_RESET:
-            mjp_device_reset(mjp);
+        case MJP_REG_CONTROL:
+            mjp_control_handle(mjp, val);
             break;
 
         /* submission ring */
