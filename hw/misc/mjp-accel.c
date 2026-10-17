@@ -197,6 +197,9 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
         case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
             val = mjp->sub_ring.size;
             break;
+        case MJP_Q_REG(0, MJP_REG_SUB_PROD):
+            val = mjp->sub_ring.prod;
+            break;
         case MJP_Q_REG(0, MJP_REG_SUB_CONS):
             val = mjp->sub_ring.cons;
             break;
@@ -252,6 +255,9 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         case MJP_Q_REG(0, MJP_REG_SUB_PROD):
             mjp->sub_ring.prod = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_CONS):
+            mjp->sub_ring.cons = val;
             break;
         case MJP_Q_REG(0, MJP_REG_SUB_DOORBELL):
             mjp_queue_test(mjp);
