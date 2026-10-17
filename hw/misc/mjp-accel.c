@@ -171,6 +171,8 @@ static void mjp_queue_test(Mjp *mjp)
     if (mjp_queue_push(mjp, &cpl_desc)) {
         return; // error
     }
+
+    msix_notify(&mjp->pdev, 0);
 }
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
