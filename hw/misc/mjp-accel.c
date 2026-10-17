@@ -14,17 +14,164 @@
 
 #define TYPE_MJP "mjp-accel"
 typedef struct Mjp Mjp;
-DECLARE_INSTANCE_CHECKER(Mjp, MJP,
-                         TYPE_MJP)
+DECLARE_INSTANCE_CHECKER(Mjp, MJP, TYPE_MJP)
+
+typedef struct MjpRing {
+    uint32_t dma_addr_lo;
+    uint32_t dma_addr_hi;
+    uint32_t size; // bookkepping: number of descriptors in the ring
+    uint32_t prod; // bookkepping: producer index
+    uint32_t cons; // bookkepping: consumer index
+} MjpRing;
 
 struct Mjp {
     PCIDevice pdev;
     MemoryRegion mmio;
 
+    MjpRing sub_ring;
+    MjpRing cpl_ring;
+
     /* device registers */
-    uint32_t dma_addr_lo;
-    uint32_t dma_addr_hi;
+
+    mjp_device_status device_status;
 };
+
+static uint64_t mjp_build_dma_addr(uint32_t lo, uint32_t hi)
+{
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static void mjp_ring_reset(MjpRing *ring)
+{
+    memset(ring, 0, sizeof(MjpRing));
+}
+
+static void mjp_device_reset(Mjp *mjp)
+{
+    MjpRing *sub_ring = &mjp->sub_ring;
+    MjpRing *cpl_ring = &mjp->cpl_ring;
+
+    mjp->device_status = 0;
+
+    mjp_ring_reset(sub_ring);
+    mjp_ring_reset(cpl_ring);
+
+    mjp->device_status = MJP_DEVICE_STATUS_RESET;
+}
+
+static void mjp_device_enable(Mjp *mjp)
+{
+    MjpRing *ring = &mjp->sub_ring;
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+    if (!addr) {
+        mjp->device_status = MJP_DEVICE_STATUS_ERROR;
+        return;
+    }
+
+    ring = &mjp->cpl_ring;
+    addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                              ring->dma_addr_hi);
+    if (!addr) {
+        mjp->device_status = MJP_DEVICE_STATUS_ERROR;
+        return;
+    }
+
+    mjp->device_status = MJP_DEVICE_STATUS_ENABLED;
+}
+
+static void mjp_control_handle(Mjp *mjp, uint64_t command)
+{
+    switch (command) {
+        case MJP_CONTROL_DEVICE_RESET:
+            mjp_device_reset(mjp);
+            break;
+        case MJP_CONTROL_DEVICE_ENABLE:
+            mjp_device_enable(mjp);
+        default:
+            break;
+    }
+}
+
+static int mjp_queue_push(Mjp *mjp, struct mjp_cpl_desc *desc)
+{
+    MjpRing *ring = &mjp->cpl_ring;
+
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+
+    uint32_t desc_idx = ring->prod % MJP_CPL_RING_SIZE;
+    addr = addr + (desc_idx * sizeof(struct mjp_cpl_desc));
+
+    MemTxResult res = dma_memory_write(
+        pci_get_address_space(&mjp->pdev),
+        addr,
+        desc,
+        sizeof(struct mjp_cpl_desc),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        /* Handle DMA failure */
+        printf("Error in dma_memory_write(): %d\n", res);
+        return res;
+    }
+
+    printf("Completed job: job_id: %lu\n", desc->job_id);
+
+    // device's job to update producer index on the completion ring
+    ring->prod++;
+
+    return 0;
+}
+
+static int mjp_queue_pop(Mjp *mjp, struct mjp_sub_desc *desc)
+{
+    MjpRing *ring = &mjp->sub_ring;
+
+    uint64_t addr = mjp_build_dma_addr(ring->dma_addr_lo,
+                                       ring->dma_addr_hi);
+
+    uint32_t desc_idx = ring->cons % MJP_SUB_RING_SIZE;
+    addr = addr + (desc_idx * sizeof(struct mjp_sub_desc));
+
+    MemTxResult res = dma_memory_read(
+        pci_get_address_space(&mjp->pdev),
+        addr,
+        desc,
+        sizeof(struct mjp_sub_desc),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        /* Handle DMA failure */
+        printf("Error in dma_memory_read(): %d\n", res);
+        return res;
+    }
+
+    printf("Received job: job_id: %lu\n", desc->job_id);
+    
+    // device's job to update consumer index on the submission ring
+    ring->cons++;
+
+    return 0;
+}
+
+static void mjp_queue_test(Mjp *mjp)
+{
+    struct mjp_sub_desc sub_desc;
+    struct mjp_cpl_desc cpl_desc;
+
+    if (mjp_queue_pop(mjp, &sub_desc)) {
+        return; // error
+    }
+
+    cpl_desc.job_id = sub_desc.job_id;
+
+    if (mjp_queue_push(mjp, &cpl_desc)) {
+        return; // error
+    }
+}
 
 static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -36,12 +183,41 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     switch (addr) {
-        case MJP_DMA_ADDR_LO:
-            val = mjp->dma_addr_lo;
+        case MJP_REG_DEVICE_STATUS:
+            val = mjp->device_status;
             break;
-        case MJP_DMA_ADDR_HI:
-            val = mjp->dma_addr_hi;
+
+        /* submission ring */
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_LO):
+            val = mjp->sub_ring.dma_addr_lo;
             break;
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
+            val = mjp->sub_ring.dma_addr_hi;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
+            val = mjp->sub_ring.size;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_CONS):
+            val = mjp->sub_ring.cons;
+            break;
+
+        /* completion ring */
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_LO):
+            val = mjp->cpl_ring.dma_addr_lo;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
+            val = mjp->cpl_ring.dma_addr_hi;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
+            val = mjp->cpl_ring.size;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_PROD):
+            val = mjp->cpl_ring.prod;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_CONS):
+            val = mjp->cpl_ring.cons;
+            break;
+
         default:
             val = 0;
             break;
@@ -60,12 +236,44 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     }
 
     switch (addr) {
-        case MJP_DMA_ADDR_LO:
-            mjp->dma_addr_lo = val;
+        case MJP_REG_CONTROL:
+            mjp_control_handle(mjp, val);
             break;
-        case MJP_DMA_ADDR_HI:
-            mjp->dma_addr_hi = val;
+
+        /* submission ring */
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_LO):
+            mjp->sub_ring.dma_addr_lo = val;
             break;
+        case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
+            mjp->sub_ring.dma_addr_hi = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
+            mjp->sub_ring.size = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_PROD):
+            mjp->sub_ring.prod = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_SUB_DOORBELL):
+            mjp_queue_test(mjp);
+            break;
+
+        /* completion ring */
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_LO):
+            mjp->cpl_ring.dma_addr_lo = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
+            mjp->cpl_ring.dma_addr_hi = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
+            mjp->cpl_ring.size = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_PROD):
+            mjp->cpl_ring.prod = val;
+            break;
+        case MJP_Q_REG(0, MJP_REG_CPL_CONS):
+            mjp->cpl_ring.cons = val;
+            break;
+
         default:
             break;
     }
@@ -86,7 +294,7 @@ static void mjp_realize(PCIDevice *pdev, Error **errp)
                           &mjp_mmio_ops,
                           mjp,
                           "mjp-mmio",
-                          MJP_BAR0_SIZE);
+                          MJP_ACCEL_BAR0_SIZE);
 
     pci_register_bar(pdev,
                      MJP_REGS_BAR_IDX,
