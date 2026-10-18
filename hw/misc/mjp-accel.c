@@ -26,6 +26,7 @@ typedef struct MjpRing {
 struct Mjp {
     PCIDevice pdev;
     MemoryRegion mmio;
+    QEMUBH *bh;
 
     MjpRing sub_ring;
     MjpRing cpl_ring;
@@ -156,19 +157,37 @@ static int mjp_queue_pop(Mjp *mjp, struct mjp_sub_desc *desc)
     return 0;
 }
 
-static void mjp_queue_test(Mjp *mjp)
+static int mjp_queue_count_new_jobs(Mjp *mjp)
 {
+    MjpRing *sub_ring = &mjp->sub_ring;
+
+    int diff = (sub_ring->prod - sub_ring->cons);
+    return diff < 0 ? diff + (MJP_SUB_RING_SIZE - 1) : diff;
+}
+
+/* TODO:
+ * We actually want to put the jobs into a device structure and get
+ * another thread to handle job execution.
+ * For now put the descriptors straight onto the completion ring and
+ * send the interrupt.
+ */
+static void mjp_queue_flush_sub_ring(void *opaque)
+{
+    Mjp *mjp = opaque;
+
     struct mjp_sub_desc sub_desc;
     struct mjp_cpl_desc cpl_desc;
 
-    if (mjp_queue_pop(mjp, &sub_desc)) {
-        return; // error
-    }
+    while (mjp_queue_count_new_jobs(mjp)) {
+        if (mjp_queue_pop(mjp, &sub_desc)) {
+            return; // error
+        }
 
-    cpl_desc.job_id = sub_desc.job_id;
+        cpl_desc.job_id = sub_desc.job_id;
 
-    if (mjp_queue_push(mjp, &cpl_desc)) {
-        return; // error
+        if (mjp_queue_push(mjp, &cpl_desc)) {
+            return; // error
+        }
     }
 
     msix_notify(&mjp->pdev, 0);
@@ -252,7 +271,7 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             mjp->sub_ring.cons = val;
             break;
         case MJP_Q_REG(0, MJP_REG_SUB_DOORBELL):
-            mjp_queue_test(mjp);
+            qemu_bh_schedule(mjp->bh);
             break;
 
         /* completion ring */
@@ -296,6 +315,8 @@ static void mjp_realize(PCIDevice *pdev, Error **errp)
                      PCI_BASE_ADDRESS_SPACE_MEMORY,
                      &mjp->mmio);
 
+    mjp->bh = qemu_bh_new(mjp_queue_flush_sub_ring, mjp);
+
     int res = msix_init(pdev, MJP_MSIX_VEC_NUM,
                         &mjp->mmio,
                         MJP_MSIX_TABLE_BAR_IDX, MJP_MSIX_TABLE_OFFSET,
@@ -317,6 +338,7 @@ static void mjp_uninit(PCIDevice *pdev)
     Mjp *mjp = MJP(pdev);
 
     /* only one vector to clean up */
+    qemu_bh_delete(mjp->bh);
     msix_vector_unuse(pdev, 0);
     msix_uninit(pdev, &mjp->mmio, &mjp->mmio);
 }
