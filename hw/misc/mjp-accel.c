@@ -19,7 +19,6 @@ DECLARE_INSTANCE_CHECKER(Mjp, MJP, TYPE_MJP)
 typedef struct MjpRing {
     uint32_t dma_addr_lo;
     uint32_t dma_addr_hi;
-    uint32_t size; // bookkepping: number of descriptors in the ring
     uint32_t prod; // bookkepping: producer index
     uint32_t cons; // bookkepping: consumer index
 } MjpRing;
@@ -196,9 +195,6 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
         case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
             val = mjp->sub_ring.dma_addr_hi;
             break;
-        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
-            val = mjp->sub_ring.size;
-            break;
         case MJP_Q_REG(0, MJP_REG_SUB_PROD):
             val = mjp->sub_ring.prod;
             break;
@@ -212,9 +208,6 @@ static uint64_t mjp_mmio_read(void *opaque, hwaddr addr, unsigned size)
             break;
         case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
             val = mjp->cpl_ring.dma_addr_hi;
-            break;
-        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
-            val = mjp->cpl_ring.size;
             break;
         case MJP_Q_REG(0, MJP_REG_CPL_PROD):
             val = mjp->cpl_ring.prod;
@@ -252,9 +245,6 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         case MJP_Q_REG(0, MJP_REG_SUB_BASE_HI):
             mjp->sub_ring.dma_addr_hi = val;
             break;
-        case MJP_Q_REG(0, MJP_REG_SUB_SIZE):
-            mjp->sub_ring.size = val;
-            break;
         case MJP_Q_REG(0, MJP_REG_SUB_PROD):
             mjp->sub_ring.prod = val;
             break;
@@ -271,9 +261,6 @@ static void mjp_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         case MJP_Q_REG(0, MJP_REG_CPL_BASE_HI):
             mjp->cpl_ring.dma_addr_hi = val;
-            break;
-        case MJP_Q_REG(0, MJP_REG_CPL_SIZE):
-            mjp->cpl_ring.size = val;
             break;
         case MJP_Q_REG(0, MJP_REG_CPL_PROD):
             mjp->cpl_ring.prod = val;
