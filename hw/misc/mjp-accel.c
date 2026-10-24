@@ -161,8 +161,7 @@ static int mjp_queue_count_new_jobs(Mjp *mjp)
 {
     MjpRing *sub_ring = &mjp->sub_ring;
 
-    int diff = (sub_ring->prod - sub_ring->cons);
-    return diff < 0 ? diff + (MJP_SUB_RING_SIZE - 1) : diff;
+    return sub_ring->prod - sub_ring->cons;
 }
 
 /* TODO:
