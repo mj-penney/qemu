@@ -93,6 +93,40 @@ static void mjp_control_handle(Mjp *mjp, uint64_t command)
     }
 }
 
+/* Do some dummy work to test end-to-end. */
+static int mjp_do_job(Mjp *mjp, struct mjp_sub_desc *desc)
+{
+    float val;
+    MemTxResult res;
+    res = dma_memory_read(
+        pci_get_address_space(&mjp->pdev),
+        desc->in_addr,
+        &val,
+        sizeof(float),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        return res;
+    }
+
+    val = val * 3.14;
+
+    res = dma_memory_write(
+        pci_get_address_space(&mjp->pdev),
+        desc->out_addr,
+        &val,
+        sizeof(float),
+        MEMTXATTRS_UNSPECIFIED
+    );
+
+    if (res != MEMTX_OK) {
+        return res;
+    }
+
+    return 0;
+}
+
 static int mjp_queue_push(Mjp *mjp, struct mjp_cpl_desc *desc)
 {
     MjpRing *ring = &mjp->cpl_ring;
@@ -181,6 +215,8 @@ static void mjp_queue_flush_sub_ring(void *opaque)
         if (mjp_queue_pop(mjp, &sub_desc)) {
             return; // error
         }
+
+        mjp_do_job(mjp, &sub_desc);
 
         cpl_desc.job_id = sub_desc.job_id;
 
